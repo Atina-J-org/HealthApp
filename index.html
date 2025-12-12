@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>211 健康管理互動報告</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        /* Chart Container Styling as required */
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 500px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 300px;
+            max-height: 400px;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #d1d5db;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #9ca3af;
+        }
+
+        /* Progress Bar Marker */
+        .progress-marker {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background-color: rgba(255, 255, 255, 0.8);
+            z-index: 10;
+        }
+
+        /* Smooth transitions */
+        .transition-width {
+            transition: width 0.5s ease-out, background-color 0.3s ease;
+        }
+
+        /* Fade In Animation */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.5s ease-out forwards;
+        }
+    </style>
+
+    <!-- Chosen Palette: Warm Neutrals with Semantic Accents -->
+    <!-- Application Structure Plan: 
+         The app is structured into three main interactive panels:
+         1. 'Profile & Plan': The input center where users define their biometrics. This drives the logic engine.
+         2. 'Dashboard': The visualization center showing real-time TDEE breakdown and the core 211 progress bars.
+         3. 'Food Logger': The action center for adding data (manual/AI) and viewing history.
+         
+         Flow: User enters data -> System calculates Plan -> User adds food -> System updates Visuals.
+         Why this structure? It separates 'Configuration' from 'Daily Operation', reducing cognitive load while keeping the feedback loop tight.
+    -->
+    <!-- Visualization & Content Choices:
+         1. Report Info: Nutritional Ratios -> Goal: Inform -> Viz: Doughnut Chart (Chart.js) -> Interaction: Hover for details. -> Justification: Shows the 'Whole' breakdown clearly.
+         2. Report Info: Daily Consumption -> Goal: Monitor -> Viz: Custom Progress Bars with Logic -> Interaction: Dynamic coloring/messages. -> Justification: Linear tracking fits consumption model best.
+         3. Report Info: Food Entry -> Goal: Action -> Viz: Interactive List & Mock AI -> Interaction: Click to add. -> Justification: Quickest input method.
+         4. CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. Icons are Emojis.
+    -->
+</head>
+<body class="bg-stone-50 text-stone-800 font-sans antialiased min-h-screen">
+
+    <!-- Navigation / Header -->
+    <header class="bg-white shadow-sm sticky top-0 z-50">
+        <div class="max-w-4xl mx-auto px-4 py-3 flex justify-between items-center">
+            <div class="flex items-center gap-2 cursor-pointer" onclick="switchView('dashboard')">
+                <span class="text-2xl">🥗</span>
+                <h1 class="font-bold text-xl tracking-tight text-stone-700">Health Manager <span class="text-xs bg-stone-100 text-stone-500 px-2 py-0.5 rounded-full ml-1">MVP</span></h1>
+            </div>
+            <nav class="flex gap-4 text-sm font-medium">
+                <button onclick="switchView('profile')" class="text-stone-500 hover:text-blue-600 transition-colors">個人設定</button>
+                <button onclick="switchView('dashboard')" class="text-blue-600 hover:text-blue-800 transition-colors">儀表板</button>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main Content Container -->
+    <main class="max-w-4xl mx-auto px-4 py-6 space-y-6">
+
+        <!-- VIEW: PROFILE SETTINGS -->
+        <section id="view-profile" class="hidden animate-fade-in">
+            <div class="bg-white rounded-2xl shadow-sm border border-stone-200 p-6 md:p-8">
+                <div class="mb-6 border-b border-stone-100 pb-4">
+                    <h2 class="text-2xl font-bold text-stone-700 flex items-center gap-2">⚙️ 身體數值設定</h2>
+                    <p class="text-stone-500 mt-2 text-sm">輸入您的基本資料，系統將根據您的年齡與 BMI 自動演算最佳飲食策略。</p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Gender -->
+                    <div class="space-y-2">
+                        <label class="block text-sm font-medium text-stone-600">性別</label>
+                        <div class="flex gap-4">
+                            <button onclick="updateProfile('gender', 'male')" id="btn-male" class="flex-1 py-3 rounded-xl border-2 border-blue-500 bg-blue-50 text-blue-700 font-bold transition-all">男性 👨</button>
+                            <button onclick="updateProfile('gender', 'female')" id="btn-female" class="flex-1 py-3 rounded-xl border-2 border-stone-200 text-stone-500 transition-all hover:bg-pink-50 hover:border-pink-300">女性 👩</button>
+                        </div>
+                    </div>
+
+                    <!-- Activity Level -->
+                    <div class="space-y-2">
+                        <label class="block text-sm font-medium text-stone-600">日常活動量</label>
+                        <select id="input-activity" onchange="updateProfile('activityLevel', this.value)" class="w-full p-3 bg-stone-50 border border-stone-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-shadow">
+                            <option value="1.2">久坐不動 (辦公室工作)</option>
+                            <option value="1.375">輕度活動 (每週運動 1-3 天)</option>
+                            <option value="1.55">中度活動 (每週運動 3-5 天)</option>
+                            <option value="1.725">高度活動 (每週運動 6-7 天)</option>
+                            <option value="1.9">超高度活動 (體力工作)</option>
+                        </select>
+                    </div>
+
+                    <!-- Numeric Inputs -->
+                    <div class="space-y-2">
+                        <label class="block text-sm font-medium text-stone-600">年齡 (歲)</label>
+                        <input type="number" id="input-age" value="30" oninput="updateProfile('age', this.value)" class="w-full p-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none">
+                    </div>
+                    <div class="space-y-2">
+                        <label class="block text-sm font-medium text-stone-600">身高 (cm)</label>
+                        <input type="number" id="input-height" value="175" oninput="updateProfile('height', this.value)" class="w-full p-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none">
+                    </div>
+                    <div class="space-y-2">
+                        <label class="block text-sm font-medium text-stone-600">體重 (kg)</label>
+                        <input type="number" id="input-weight" value="80" oninput="updateProfile('weight', this.value)" class="w-full p-3 border border-stone-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none">
+                    </div>
+                    
+                    <!-- Live Stats Preview -->
+                    <div class="bg-blue-50 rounded-xl p-4 flex flex-col justify-center">
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-sm text-blue-800 font-bold">目前 BMI</span>
+                            <span id="preview-bmi" class="text-2xl font-black text-blue-600">26.1</span>
+                        </div>
+                        <div class="text-xs text-blue-600 bg-white/50 p-2 rounded-lg">
+                            <span id="preview-bmi-status">過重</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-8 pt-6 border-t border-stone-100 flex justify-end">
+                    <button onclick="switchView('dashboard')" class="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-xl font-bold shadow-lg shadow-blue-200 transition-transform active:scale-95">
+                        確認並前往儀表板 ➜
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- VIEW: DASHBOARD -->
+        <section id="view-dashboard" class="animate-fade-in block">
+            
+            <!-- Context Header -->
+            <div class="bg-white rounded-2xl p-6 shadow-sm border-l-4 border-blue-500 mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                    <h2 class="text-lg font-bold text-stone-800">今日健康概況</h2>
+                    <p class="text-sm text-stone-500">基於您的 TDEE 計算出的飲食策略。</p>
+                </div>
+                <div class="flex gap-3">
+                    <div class="bg-stone-100 px-4 py-2 rounded-lg text-center">
+                        <p class="text-xs text-stone-400 uppercase font-bold">計畫類型</p>
+                        <p id="plan-type" class="text-blue-600 font-bold text-sm">計算中...</p>
+                    </div>
+                    <div class="bg-stone-100 px-4 py-2 rounded-lg text-center">
+                        <p class="text-xs text-stone-400 uppercase font-bold">每日目標</p>
+                        <p id="plan-tdee" class="text-stone-800 font-bold text-sm">--- kcal</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                
+                <!-- Left Column: Visualizations -->
+                <div class="lg:col-span-2 space-y-6">
+                    
+                    <!-- Progress Bars Card -->
+                    <div class="bg-white rounded-2xl p-6 shadow-sm border border-stone-200">
+                        <h3 class="font-bold text-stone-700 mb-6 flex items-center gap-2">
+                            <span>📊</span> 211 營養攝取進度
+                        </h3>
+                        
+                        <!-- Veggie Bar -->
+                        <div class="mb-6">
+                            <div class="flex justify-between items-end mb-2">
+                                <span class="font-medium text-green-700 flex items-center gap-2">🥦 蔬菜 / 纖維</span>
+                                <span class="text-xs text-stone-500"><span id="val-veg" class="font-bold text-stone-800">0</span> / <span id="target-veg">0</span> kcal</span>
+                            </div>
+                            <div class="relative w-full h-4 bg-stone-100 rounded-full overflow-hidden">
+                                <!-- Markers -->
+                                <div class="progress-marker left-[33%]"></div>
+                                <div class="progress-marker left-[66%]"></div>
+                                <!-- Bar -->
+                                <div id="bar-veg" class="h-full bg-green-500 rounded-full transition-width w-0"></div>
+                            </div>
+                            <div id="msg-veg" class="text-xs text-right mt-1 h-4"></div>
+                        </div>
+
+                        <!-- Protein Bar -->
+                        <div class="mb-6">
+                            <div class="flex justify-between items-end mb-2">
+                                <span class="font-medium text-blue-700 flex items-center gap-2">🥩 蛋白質</span>
+                                <span class="text-xs text-stone-500"><span id="val-protein" class="font-bold text-stone-800">0</span> / <span id="target-protein">0</span> kcal</span>
+                            </div>
+                            <div class="relative w-full h-4 bg-stone-100 rounded-full overflow-hidden">
+                                <div class="progress-marker left-[33%]"></div>
+                                <div class="progress-marker left-[66%]"></div>
+                                <div id="bar-protein" class="h-full bg-blue-500 rounded-full transition-width w-0"></div>
+                            </div>
+                            <div id="msg-protein" class="text-xs text-right mt-1 h-4"></div>
+                        </div>
+
+                        <!-- Carb Bar -->
+                        <div class="mb-2">
+                            <div class="flex justify-between items-end mb-2">
+                                <span class="font-medium text-yellow-700 flex items-center gap-2">🍚 全穀雜糧</span>
+                                <span class="text-xs text-stone-500"><span id="val-carb" class="font-bold text-stone-800">0</span> / <span id="target-carb">0</span> kcal</span>
+                            </div>
+                            <div class="relative w-full h-4 bg-stone-100 rounded-full overflow-hidden">
+                                <div class="progress-marker left-[33%]"></div>
+                                <div class="progress-marker left-[66%]"></div>
+                                <div id="bar-carb" class="h-full bg-yellow-400 rounded-full transition-width w-0"></div>
+                            </div>
+                            <div id="msg-carb" class="text-xs text-right mt-1 h-4"></div>
+                        </div>
+                    </div>
+
+                    <!-- Doughnut Chart Card -->
+                    <div class="bg-white rounded-2xl p-6 shadow-sm border border-stone-200">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="font-bold text-stone-700">🎯 理想比例分配</h3>
+                            <span class="text-xs bg-stone-100 text-stone-500 px-2 py-1 rounded">依據年齡/BMI 自動演算</span>
+                        </div>
+                        <div class="chart-container">
+                            <canvas id="ratioChart"></canvas>
+                        </div>
+                        <div class="mt-4 text-center">
+                            <p id="plan-message" class="text-sm text-stone-600 bg-stone-50 p-3 rounded-lg border border-stone-100 italic">
+                                正在載入教練建議...
+                            </p>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- Right Column: Actions & Log -->
+                <div class="space-y-6">
+                    
+                    <!-- Add Food Action Card -->
+                    <div class="bg-gradient-to-br from-white to-stone-50 rounded-2xl p-6 shadow-sm border border-stone-200">
+                        <h3 class="font-bold text-stone-700 mb-4">🍽️ 新增飲食紀錄</h3>
+                        
+                        <!-- Mock AI Button -->
+                        <button onclick="mockAICamera()" id="btn-ai" class="w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white p-4 rounded-xl shadow-lg mb-4 flex items-center justify-between hover:shadow-xl transition-all active:scale-95 group">
+                            <div class="text-left">
+                                <p class="font-bold text-lg group-hover:text-white">📸 AI 拍照分析</p>
+                                <p class="text-xs text-indigo-100">自動辨識熱量</p>
+                            </div>
+                            <span class="text-2xl group-hover:scale-110 transition-transform">✨</span>
+                        </button>
+
+                        <div class="relative mb-4">
+                            <input type="text" id="food-search" placeholder="搜尋食物 (如: 滷肉飯)" class="w-full pl-10 pr-4 py-3 bg-white border border-stone-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm shadow-sm">
+                            <span class="absolute left-3 top-3.5 text-stone-400">🔍</span>
+                        </div>
+
+                        <div id="food-suggestions" class="space-y-2 max-h-60 overflow-y-auto pr-1">
+                            <!-- JS populates this -->
+                        </div>
+                    </div>
+
+                    <!-- Recent Log -->
+                    <div class="bg-white rounded-2xl p-6 shadow-sm border border-stone-200 min-h-[300px]">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="font-bold text-stone-700">📝 今日紀錄</h3>
+                            <button onclick="clearLog()" class="text-xs text-red-400 hover:text-red-600 underline">清除</button>
+                        </div>
+                        <div id="log-list" class="space-y-3">
+                            <div class="text-center py-10 text-stone-400 border border-dashed border-stone-200 rounded-xl">
+                                <p class="text-2xl mb-2">🍽️</p>
+                                <p class="text-sm">尚未有紀錄</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- JavaScript Logic -->
+    <script>
+        // --- 1. STATE MANAGEMENT ---
+        const state = {
+            profile: {
+                gender: 'male',
+                age: 30,
+                height: 175,
+                weight: 80,
+                activityLevel: 1.375
+            },
+            plan: {
+                tdee: 0,
+                type: '',
+                ratios: { veg: 0.15, protein: 0.30, carb: 0.55 },
+                targets: { veg: 0, protein: 0, carb: 0 }
+            },
+            logs: [],
+            dailyStats: { veg: 0, protein: 0, carb: 0, total: 0 }
+        };
+
+        // --- 2. DATA CONSTANTS ---
+        const MOCK_FOOD_DB = [
+            { id: 1, name: '滷肉飯 (小)', calories: 450, veg: 20, protein: 80, carb: 350 },
+            { id: 2, name: '雞胸肉沙拉', calories: 320, veg: 100, protein: 200, carb: 20 },
+            { id: 3, name: '珍珠奶茶 (半糖)', calories: 550, veg: 0, protein: 20, carb: 530 },
+            { id: 4, name: '燙青菜', calories: 80, veg: 70, protein: 10, carb: 0 },
+            { id: 5, name: '便利商店御飯糰', calories: 200, veg: 10, protein: 30, carb: 160 },
+            { id: 6, name: '炸雞腿便當', calories: 850, veg: 50, protein: 300, carb: 500 }
+        ];
+
+        let ratioChartInstance = null;
+
+        // --- 3. CORE LOGIC ENGINE ---
+
+        function calculateTDEE() {
+            const { weight, height, age, gender, activityLevel } = state.profile;
+            let bmr = (10 * weight) + (6.25 * height) - (5 * age);
+            bmr += (gender === 'male' ? 5 : -161);
+            return Math.round(bmr * activityLevel);
+        }
+
+        function determinePlan(age, bmi) {
+            // Logic Matrix based on Source Report
+            if (age < 25) {
+                return { 
+                    type: '均衡基本款 🟢', 
+                    ratios: { veg: 0.15, protein: 0.30, carb: 0.55 }, 
+                    message: '年輕就是本錢！維持均衡飲食即可。' 
+                };
+            }
+            if (age > 40) {
+                return { 
+                    type: '增肌減脂款 💪', 
+                    ratios: { veg: 0.20, protein: 0.40, carb: 0.40 }, 
+                    message: '代謝變慢囉，多吃蛋白質與蔬菜，少吃精緻澱粉。' 
+                };
+            }
+            // Age 25-40
+            if (bmi > 24) {
+                return { 
+                    type: '增肌減脂款 💪', 
+                    ratios: { veg: 0.20, protein: 0.40, carb: 0.40 }, 
+                    message: 'BMI 稍微超標，我們嚴格一點控制澱粉，增加飽足感！' 
+                };
+            }
+            return { 
+                type: '均衡基本款 🟢', 
+                ratios: { veg: 0.15, protein: 0.30, carb: 0.55 }, 
+                message: '維持得很好！繼續保持目前的飲食節奏。' 
+            };
+        }
+
+        function updateCalculations() {
+            const bmi = state.profile.weight / Math.pow(state.profile.height / 100, 2);
+            const tdee = calculateTDEE();
+            const planDetails = determinePlan(state.profile.age, bmi);
+
+            state.plan = {
+                tdee: tdee,
+                type: planDetails.type,
+                message: planDetails.message,
+                ratios: planDetails.ratios,
+                targets: {
+                    veg: Math.round(tdee * planDetails.ratios.veg),
+                    protein: Math.round(tdee * planDetails.ratios.protein),
+                    carb: Math.round(tdee * planDetails.ratios.carb)
+                }
+            };
+
+            updateUI();
+        }
+
+        // --- 4. UI UPDATE FUNCTIONS ---
+
+        function updateProfile(key, value) {
+            state.profile[key] = isNaN(value) ? value : Number(value);
+            
+            // UI Feedback for Gender Buttons
+            if (key === 'gender') {
+                const btnMale = document.getElementById('btn-male');
+                const btnFemale = document.getElementById('btn-female');
+                if (value === 'male') {
+                    btnMale.className = 'flex-1 py-3 rounded-xl border-2 border-blue-500 bg-blue-50 text-blue-700 font-bold transition-all';
+                    btnFemale.className = 'flex-1 py-3 rounded-xl border-2 border-stone-200 text-stone-500 transition-all hover:bg-pink-50 hover:border-pink-300';
+                } else {
+                    btnFemale.className = 'flex-1 py-3 rounded-xl border-2 border-pink-500 bg-pink-50 text-pink-700 font-bold transition-all';
+                    btnMale.className = 'flex-1 py-3 rounded-xl border-2 border-stone-200 text-stone-500 transition-all hover:bg-blue-50 hover:border-blue-300';
+                }
+            }
+
+            updateCalculations();
+        }
+
+        function updateUI() {
+            // Profile Preview
+            const bmi = (state.profile.weight / Math.pow(state.profile.height / 100, 2)).toFixed(1);
+            document.getElementById('preview-bmi').innerText = bmi;
+            const bmiStatus = bmi > 24 ? '過重 ⚠️' : (bmi < 18.5 ? '過輕 ☁️' : '正常 ✅');
+            document.getElementById('preview-bmi-status').innerText = bmiStatus;
+
+            // Dashboard Headers
+            document.getElementById('plan-type').innerText = state.plan.type;
+            document.getElementById('plan-tdee').innerText = `${state.plan.tdee} kcal`;
+            document.getElementById('plan-message').innerText = state.plan.message;
+
+            // Update Bars
+            updateBar('veg', state.dailyStats.veg, state.plan.targets.veg, 'green');
+            updateBar('protein', state.dailyStats.protein, state.plan.targets.protein, 'blue');
+            updateBar('carb', state.dailyStats.carb, state.plan.targets.carb, 'yellow');
+
+            // Update Chart
+            updateChart();
+        }
+
+        function updateBar(type, current, total, colorBase) {
+            const percentage = Math.min((current / total) * 100, 100);
+            const bar = document.getElementById(`bar-${type}`);
+            const valEl = document.getElementById(`val-${type}`);
+            const targetEl = document.getElementById(`target-${type}`);
+            const msgEl = document.getElementById(`msg-${type}`);
+
+            valEl.innerText = current;
+            targetEl.innerText = total;
+            bar.style.width = `${percentage}%`;
+
+            // Logic for Elastic Encouragement
+            let isWarning = false;
+            let barColorClass = '';
+            
+            // Veggie Logic: Always Green
+            if (type === 'veg') {
+                barColorClass = 'bg-green-500';
+                msgEl.innerHTML = percentage >= 100 ? '<span class="text-green-600 font-bold">🎉 太棒了！蔬菜多多益善</span>' : '';
+            } 
+            // Others Logic: 80% Warning
+            else {
+                isWarning = percentage > 80;
+                
+                if (colorBase === 'blue') barColorClass = isWarning ? 'bg-orange-400' : 'bg-blue-500';
+                if (colorBase === 'yellow') barColorClass = isWarning ? 'bg-orange-400' : 'bg-yellow-400';
+
+                if (percentage >= 100) {
+                    msgEl.innerHTML = '<span class="text-red-500 font-bold">🚫 今日額度已滿</span>';
+                    barColorClass = 'bg-red-500'; // Strict full cap
+                } else if (isWarning) {
+                    msgEl.innerHTML = '<span class="text-orange-500">⚠️ 快達標囉，晚餐建議調整一下</span>';
+                } else {
+                    msgEl.innerHTML = '';
+                }
+            }
+            
+            bar.className = `h-full rounded-full transition-width ${barColorClass}`;
+        }
+
+        function renderFoodList() {
+            const list = document.getElementById('log-list');
+            if (state.logs.length === 0) {
+                list.innerHTML = `
+                    <div class="text-center py-10 text-stone-400 border border-dashed border-stone-200 rounded-xl">
+                        <p class="text-2xl mb-2">🍽️</p>
+                        <p class="text-sm">尚未有紀錄</p>
+                    </div>`;
+                return;
+            }
+
+            list.innerHTML = state.logs.map(item => `
+                <div class="bg-stone-50 p-3 rounded-xl border border-stone-100 flex justify-between items-center animate-fade-in">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 bg-white rounded-full flex items-center justify-center text-lg shadow-sm">
+                            ${item.emoji || '🥘'}
+                        </div>
+                        <div>
+                            <p class="font-bold text-stone-800 text-sm">${item.name}</p>
+                            <p class="text-xs text-stone-500">菜${item.veg} • 肉${item.protein} • 飯${item.carb}</p>
+                        </div>
+                    </div>
+                    <span class="font-bold text-stone-600 text-sm">${item.calories}</span>
+                </div>
+            `).join('');
+        }
+
+        function addFood(food) {
+            state.logs.unshift(food);
+            
+            // Recalculate totals
+            state.dailyStats.veg += food.veg;
+            state.dailyStats.protein += food.protein;
+            state.dailyStats.carb += food.carb;
+            state.dailyStats.total += food.calories;
+
+            renderFoodList();
+            updateUI();
+        }
+
+        function clearLog() {
+            state.logs = [];
+            state.dailyStats = { veg: 0, protein: 0, carb: 0, total: 0 };
+            renderFoodList();
+            updateUI();
+        }
+
+        // --- 5. INTERACTIVE FEATURES (AI & Search) ---
+
+        function mockAICamera() {
+            const btn = document.getElementById('btn-ai');
+            const originalContent = btn.innerHTML;
+            
+            // Loading State
+            btn.innerHTML = `<div class="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent mx-auto"></div>`;
+            btn.disabled = true;
+
+            setTimeout(() => {
+                const aiFood = {
+                    id: Date.now(),
+                    name: 'AI 辨識: 宮保雞丁飯',
+                    calories: 750,
+                    veg: 100,
+                    protein: 250,
+                    carb: 400,
+                    emoji: '📸'
+                };
+                addFood(aiFood);
+                
+                // Reset Button
+                btn.innerHTML = originalContent;
+                btn.disabled = false;
+                alert('AI 分析完成！已加入「宮保雞丁飯」');
+            }, 1500);
+        }
+
+        function initSearch() {
+            const input = document.getElementById('food-search');
+            const suggestions = document.getElementById('food-suggestions');
+
+            // Populate initial list
+            const renderSuggestions = (list) => {
+                suggestions.innerHTML = list.map(food => `
+                    <div onclick='addFood(${JSON.stringify(food)})' class="p-3 bg-white border border-stone-100 rounded-xl flex justify-between items-center cursor-pointer hover:border-blue-300 hover:shadow-sm transition-all">
+                        <div>
+                            <span class="font-bold text-stone-700 text-sm">${food.name}</span>
+                            <div class="flex gap-1 mt-1">
+                                <span class="text-[10px] bg-green-50 text-green-700 px-1 rounded">菜${food.veg}</span>
+                                <span class="text-[10px] bg-blue-50 text-blue-700 px-1 rounded">肉${food.protein}</span>
+                                <span class="text-[10px] bg-yellow-50 text-yellow-700 px-1 rounded">飯${food.carb}</span>
+                            </div>
+                        </div>
+                        <div class="text-blue-600 font-bold text-sm">+ ${food.calories}</div>
+                    </div>
+                `).join('');
+            };
+
+            renderSuggestions(MOCK_FOOD_DB);
+
+            input.addEventListener('input', (e) => {
+                const term = e.target.value.toLowerCase();
+                const filtered = MOCK_FOOD_DB.filter(f => f.name.includes(term));
+                renderSuggestions(filtered);
+            });
+        }
+
+        // --- 6. CHART CONFIGURATION ---
+        function initChart() {
+            const ctx = document.getElementById('ratioChart').getContext('2d');
+            
+            // Chart.js Setup
+            ratioChartInstance = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['蔬菜 (纖維)', '蛋白質 (基石)', '全穀雜糧 (能量)'],
+                    datasets: [{
+                        data: [33, 33, 33], // Initial dummy data
+                        backgroundColor: [
+                            '#22c55e', // Green-500
+                            '#3b82f6', // Blue-500
+                            '#facc15'  // Yellow-400
+                        ],
+                        borderWidth: 0,
+                        hoverOffset: 10
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                padding: 20,
+                                usePointStyle: true,
+                                font: { family: "'Helvetica Neue', 'Helvetica', 'Arial', sans-serif" }
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return ` ${context.label}: ${context.raw} kcal`;
+                                }
+                            },
+                            backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                            titleColor: '#1f2937',
+                            bodyColor: '#1f2937',
+                            borderColor: '#e5e7eb',
+                            borderWidth: 1,
+                            padding: 10,
+                            displayColors: true
+                        }
+                    },
+                    cutout: '70%'
+                }
+            });
+        }
+
+        function updateChart() {
+            if (ratioChartInstance) {
+                ratioChartInstance.data.datasets[0].data = [
+                    state.plan.targets.veg,
+                    state.plan.targets.protein,
+                    state.plan.targets.carb
+                ];
+                ratioChartInstance.update();
+            }
+        }
+
+        // --- 7. NAVIGATION ---
+        function switchView(viewId) {
+            document.getElementById('view-profile').classList.add('hidden');
+            document.getElementById('view-dashboard').classList.add('hidden');
+            
+            document.getElementById(`view-${viewId}`).classList.remove('hidden');
+        }
+
+        // --- INITIALIZATION ---
+        window.onload = function() {
+            initChart();
+            updateCalculations();
+            initSearch();
+            renderFoodList();
+        };
+
+    </script>
+</body>
+</html>
