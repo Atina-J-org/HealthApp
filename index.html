@@ -529,8 +529,9 @@
                     const base64Data = await toBase64(file);
                     const cleanBase64 = base64Data.split(',')[1]; // Remove "data:image/jpeg;base64," prefix
 
-                    // 2. Prepare API Payload
-                    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${state.apiKey}`;
+                    // 2. Prepare API Payload - UPDATED MODEL NAME to prevent alias error
+                    // Using "gemini-1.5-flash-latest" as a safer alias, or could use "gemini-1.5-flash-001"
+                    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${state.apiKey}`;
                     
                     const payload = {
                         contents: [{
