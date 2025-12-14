@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>211 健康管理互動報告 (AI版)</title>
+    <title>211 健康管理互動報告 (AI 2.0 版)</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Chart.js -->
@@ -70,7 +70,7 @@
         <div class="max-w-4xl mx-auto px-4 py-3 flex justify-between items-center">
             <div class="flex items-center gap-2 cursor-pointer" onclick="switchView('dashboard')">
                 <span class="text-2xl">🥗</span>
-                <h1 class="font-bold text-xl tracking-tight text-stone-700">Health Manager <span class="text-xs bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full ml-1">AI+</span></h1>
+                <h1 class="font-bold text-xl tracking-tight text-stone-700">Health Manager <span class="text-xs bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full ml-1">Gemini</span></h1>
             </div>
             <nav class="flex gap-4 text-sm font-medium">
                 <button onclick="switchView('profile')" class="text-stone-500 hover:text-blue-600 transition-colors">個人設定</button>
@@ -145,19 +145,22 @@
                     
                     <!-- Model Selection -->
                     <div class="mb-3">
-                         <label class="block text-xs font-bold text-stone-500 mb-1">選擇 AI 模型</label>
-                         <select id="input-model-select" onchange="handleModelSelectChange(this.value)" class="w-full p-2 bg-stone-50 border border-stone-200 rounded-lg text-sm outline-none mb-2">
-                             <option value="gemini-1.5-flash">gemini-1.5-flash (推薦: 速度快)</option>
-                             <option value="gemini-1.5-flash-001">gemini-1.5-flash-001 (穩定版)</option>
-                             <option value="gemini-1.5-flash-002">gemini-1.5-flash-002 (最新版)</option>
-                             <option value="gemini-1.5-pro">gemini-1.5-pro (精準度高)</option>
-                             <option value="custom">🛠️ 自訂模型 ID (例如 gemini-2.0...)</option>
+                         <label class="block text-xs font-bold text-stone-500 mb-1">選擇 AI 模型 (建議使用 Flash 002 或 8b)</label>
+                         <select id="input-model-select" onchange="handleModelSelectChange(this.value)" class="w-full p-2 bg-indigo-50 border border-indigo-200 rounded-lg text-sm outline-none mb-2 text-indigo-900 font-medium">
+                             <!-- Stable Versions -->
+                             <option value="gemini-1.5-flash" selected>gemini-1.5-flash(最新穩定版) ✅</option>                            
+                             <!-- Experimental (Fast but 429 prone) -->
+                             <option value="gemini-2.0-flash-exp">gemini-2.0-flash-exp (實驗版) 🧪</option>
+                             <!-- Pro Versions -->
+                             <option value="gemini-1.5-pro">gemini-1.5-pro (高階版) 🧠</option>
+                             <!-- Custom -->
+                             <option value="custom">🛠️ 自訂模型 ID</option>
                          </select>
                          
                          <!-- Custom Model Input (Hidden by default) -->
                          <div id="custom-model-container" class="hidden">
-                            <input type="text" id="input-model-custom" placeholder="輸入模型 ID (如: gemini-2.0-flash-exp)" onchange="saveModel(this.value)" class="w-full p-2 bg-indigo-50 border border-indigo-200 rounded-lg text-sm outline-none text-indigo-700 font-mono">
-                            <p class="text-[10px] text-stone-400 mt-1">請確保您輸入的模型 ID 在 Google AI Studio 中有效。</p>
+                            <input type="text" id="input-model-custom" placeholder="輸入模型 ID (如: gemini-1.5-flash)" onchange="saveModel(this.value)" class="w-full p-2 bg-stone-50 border border-stone-200 rounded-lg text-sm outline-none font-mono">
+                            <p class="text-[10px] text-stone-400 mt-1">若官方模型 ID 變更，可在此手動輸入。</p>
                          </div>
                     </div>
 
@@ -340,7 +343,7 @@
             logs: [],
             dailyStats: { veg: 0, protein: 0, carb: 0, total: 0 },
             apiKey: '', // Stores Gemini API Key
-            model: 'gemini-1.5-flash' // Default Model
+            model: 'gemini-1.5-flash' // Default: Stable Version
         };
 
         // --- 2. DATA CONSTANTS ---
@@ -576,7 +579,11 @@
                     const cleanBase64 = base64Data.split(',')[1]; // Remove "data:image/jpeg;base64," prefix
 
                     // 2. Prepare API Payload
-                    // FIX: Dynamic Model Name based on state.model
+                    // FIX: Ensure state.model is current and clean
+                    if (!state.model || state.model === 'undefined') {
+                        state.model = 'gemini-1.5-flash'; // Safe Fallback
+                    }
+                    
                     const url = `https://generativelanguage.googleapis.com/v1beta/models/${state.model}:generateContent?key=${state.apiKey}`;
                     
                     console.log("Calling API with model:", state.model); // Debug log
@@ -599,9 +606,29 @@
 
                     const data = await response.json();
                     
-                    if (data.error) throw new Error(data.error.message);
+                    if (data.error) {
+                        console.error("API Error Payload:", data);
+                        
+                        // Handle 429 Resource Exhausted (Rate Limit) explicitly
+                        if (data.error.code === 429) {
+                             throw new Error(`⚠️ API 請求次數過多 (Rate Limit Exceeded)。\n請稍等約 30 秒後再試，或是切換至較穩定的 gemini-1.5-flash 模型。\n(目前使用模型: ${state.model})`);
+                        }
+                        
+                        // Handle 404 Not Found (Invalid Model Name) explicitly
+                        if (data.error.code === 404) {
+                             throw new Error(`⚠️ 找不到模型 (Model Not Found)。\n您選擇的模型 ID (${state.model}) 可能不正確或已停用。\n請嘗試切換選單中的其他選項。`);
+                        }
+
+                        // Detailed error handling
+                        const errMsg = data.error.message || '未知錯誤';
+                        throw new Error(`API 回傳錯誤: ${errMsg} (Model: ${state.model})`);
+                    }
 
                     // 4. Parse Response
+                    if (!data.candidates || !data.candidates[0].content) {
+                         throw new Error("AI 無法辨識此圖片，請試試看別張照片。");
+                    }
+
                     const textResponse = data.candidates[0].content.parts[0].text;
                     // Clean up markdown code blocks if AI adds them
                     const jsonStr = textResponse.replace(/```json/g, '').replace(/```/g, '').trim();
@@ -621,8 +648,8 @@
                     alert(`分析成功！\n${foodData.name}: ${foodData.calories} kcal`);
 
                 } catch (error) {
-                    console.error("AI Error:", error);
-                    alert(`AI 分析失敗 (${state.model})，請檢查 API Key 或模型 ID。\n錯誤訊息: ${error.message}`);
+                    console.error("Critical AI Error:", error);
+                    alert(`分析失敗！\n\n1. 請檢查 API Key 是否正確\n2. ${error.message}`);
                 } finally {
                     // Reset UI
                     btn.disabled = false;
@@ -745,6 +772,10 @@
                 state.apiKey = savedKey;
                 document.getElementById('input-apikey').value = savedKey;
             }
+
+            // Init default model (Resetting old defaults)
+            state.model = 'gemini-1.5-flash';
+            document.getElementById('input-model-select').value = 'gemini-1.5-flash';
 
             initChart();
             updateCalculations();
